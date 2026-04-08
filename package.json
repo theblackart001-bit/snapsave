@@ -26,13 +26,7 @@
       "electron/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "bin",
-        "to": "bin",
-        "filter": ["yt-dlp.exe", "ffmpeg.exe"]
-      }
-    ],
+    "extraResources": [],
     "win": {
       "icon": "build/icon.ico",
       "target": [
@@ -45,8 +39,10 @@
     "nsis": {
       "oneClick": true,
       "perMachine": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "SnapSave"
+      "createDesktopShortcut": "always",
+      "shortcutName": "SnapSave",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "publish": {
       "provider": "github",

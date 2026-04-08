@@ -234,6 +234,16 @@
     </div>
   </div>
 
+  <!-- Setup overlay -->
+  <div id="setupOverlay" class="hidden" style="position:fixed;inset:0;background:var(--bg-primary);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+    <h1 style="font-size:36px;font-weight:700;background:linear-gradient(135deg,#6c5ce7,#a29bfe,#74b9ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SnapSave</h1>
+    <p id="setupMsg" style="color:var(--text-secondary);font-size:16px;">필요한 도구를 다운로드하는 중...</p>
+    <div style="width:300px;height:6px;border-radius:3px;background:var(--bg-tertiary);overflow:hidden;margin-top:8px;">
+      <div id="setupBar" style="width:0%;height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s;"></div>
+    </div>
+    <p id="setupPct" style="color:var(--text-secondary);font-size:13px;">0%</p>
+  </div>
+
   <div class="footer">SnapSave — 개인 사용 목적으로만 이용하세요</div>
 
   <script>
@@ -243,6 +253,24 @@
     };
 
     const $ = (id) => document.getElementById(id);
+
+    // First-run setup
+    (async () => {
+      const { ready } = await window.api.checkSetup();
+      if (!ready) {
+        const overlay = $("setupOverlay");
+        overlay.classList.remove("hidden");
+        overlay.style.display = "flex";
+        window.api.onSetupProgress(({ msg, pct }) => {
+          $("setupMsg").textContent = msg;
+          $("setupBar").style.width = pct + "%";
+          $("setupPct").textContent = pct + "%";
+        });
+        await window.api.runSetup();
+        overlay.style.display = "none";
+      }
+    })();
+
     const urlInput = $("urlInput");
     const analyzeBtn = $("analyzeBtn");
     const errorMsg = $("errorMsg");

@@ -4,6 +4,7 @@ const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const https = require("https");
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -11,26 +12,108 @@ app.commandLine.appendSwitch("disable-gpu");
 let mainWindow;
 const isDev = !app.isPackaged;
 
-function getResourcePath(filename) {
-  if (isDev) return path.join(__dirname, "..", "bin", filename);
-  return path.join(process.resourcesPath, "bin", filename);
+// Tools stored in AppData/snapsave-bin
+const binDir = isDev
+  ? path.join(__dirname, "..", "bin")
+  : path.join(app.getPath("userData"), "bin");
+
+const ytdlpPath = path.join(binDir, "yt-dlp.exe");
+const ffmpegPath = path.join(binDir, "ffmpeg.exe");
+
+// ── Download helpers ──
+
+function downloadFile(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const follow = (u) => {
+      https.get(u, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return follow(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+        const total = parseInt(res.headers["content-length"], 10) || 0;
+        let downloaded = 0;
+        const file = fs.createWriteStream(dest);
+        res.on("data", (chunk) => {
+          downloaded += chunk.length;
+          file.write(chunk);
+          if (total && onProgress) onProgress(downloaded, total);
+        });
+        res.on("end", () => { file.end(() => resolve()); });
+        res.on("error", reject);
+      }).on("error", reject);
+    };
+    follow(url);
+  });
 }
 
-function getYtdlpPath() {
-  return getResourcePath("yt-dlp.exe");
+async function ensureTools(progressCb) {
+  if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
+
+  const need = [];
+  if (!fs.existsSync(ytdlpPath)) need.push("yt-dlp");
+  if (!fs.existsSync(ffmpegPath)) need.push("ffmpeg");
+  if (need.length === 0) return;
+
+  // Download yt-dlp
+  if (need.includes("yt-dlp")) {
+    progressCb("yt-dlp 다운로드 중...", 0);
+    await downloadFile(
+      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+      ytdlpPath,
+      (dl, tot) => progressCb("yt-dlp 다운로드 중...", Math.round((dl / tot) * 100))
+    );
+  }
+
+  // Download ffmpeg (gyan.dev essentials build - smallest full build ~25MB zip)
+  if (need.includes("ffmpeg")) {
+    progressCb("ffmpeg 다운로드 중...", 0);
+    const zipPath = path.join(binDir, "ffmpeg.zip");
+    await downloadFile(
+      "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+      zipPath,
+      (dl, tot) => progressCb("ffmpeg 다운로드 중...", Math.round((dl / tot) * 100))
+    );
+
+    // Extract just ffmpeg.exe from zip
+    progressCb("ffmpeg 압축 해제 중...", 0);
+    const { execFileSync } = require("child_process");
+    // Use PowerShell to extract
+    execFileSync("powershell", [
+      "-NoProfile", "-Command",
+      `$zip = [System.IO.Compression.ZipFile]::OpenRead('${zipPath.replace(/'/g, "''")}');` +
+      `$entry = $zip.Entries | Where-Object { $_.Name -eq 'ffmpeg.exe' } | Select-Object -First 1;` +
+      `[System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '${ffmpegPath.replace(/'/g, "''")}', $true);` +
+      `$zip.Dispose()`
+    ], { timeout: 120000 });
+
+    // Cleanup zip
+    try { fs.unlinkSync(zipPath); } catch {}
+  }
 }
 
-function getFfmpegDir() {
-  return path.dirname(getResourcePath("ffmpeg.exe"));
-}
+// ── IPC: setup progress ──
+
+ipcMain.handle("check-setup", async () => {
+  return { ready: fs.existsSync(ytdlpPath) && fs.existsSync(ffmpegPath) };
+});
+
+ipcMain.handle("run-setup", async () => {
+  await ensureTools((msg, pct) => {
+    if (mainWindow) mainWindow.webContents.send("setup-progress", { msg, pct });
+  });
+  return { ready: true };
+});
+
+// ── yt-dlp runner ──
 
 function runYtdlp(args) {
   return new Promise((resolve, reject) => {
-    const ffmpegDir = getFfmpegDir();
-    const ffmpegArgs = ffmpegDir ? ["--ffmpeg-location", ffmpegDir] : [];
+    const ffmpegDir = path.dirname(ffmpegPath);
     execFile(
-      getYtdlpPath(),
-      [...ffmpegArgs, ...args],
+      ytdlpPath,
+      ["--ffmpeg-location", ffmpegDir, ...args],
       { maxBuffer: 10 * 1024 * 1024, timeout: 120000 },
       (error, stdout, stderr) => {
         if (error) {
@@ -78,12 +161,10 @@ ipcMain.handle("download", async (_event, opts) => {
 
   if (opts.type === "thumbnail") {
     await runYtdlp([
-      "--write-thumbnail",
-      "--skip-download",
+      "--write-thumbnail", "--skip-download",
       "--convert-thumbnails", "jpg",
       "-o", path.join(downloadsDir, "%(title).80s"),
-      "--no-playlist",
-      opts.url,
+      "--no-playlist", opts.url,
     ]);
     return { success: true };
   }
@@ -108,12 +189,12 @@ ipcMain.handle("download", async (_event, opts) => {
   return { success: true };
 });
 
+// ── Window ──
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
-    minWidth: 600,
-    minHeight: 500,
+    width: 900, height: 700,
+    minWidth: 600, minHeight: 500,
     title: "SnapSave",
     icon: path.join(__dirname, "icon.ico"),
     autoHideMenuBar: true,
@@ -148,16 +229,14 @@ function setupAutoUpdater() {
 
   autoUpdater.on("update-available", (info) => {
     dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "업데이트 발견",
+      type: "info", title: "업데이트 발견",
       message: `새 버전 ${info.version}을 다운로드 중입니다.`,
     });
   });
 
   autoUpdater.on("update-downloaded", () => {
     dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "업데이트 준비 완료",
+      type: "info", title: "업데이트 준비 완료",
       message: "업데이트가 다운로드되었습니다. 지금 재시작하시겠습니까?",
       buttons: ["지금 재시작", "나중에"],
     }).then((result) => {
