@@ -133,9 +133,18 @@ const indexHTML = `<!DOCTYPE html>
     <p id="setupPct" style="color:var(--text-secondary);font-size:13px;"></p>
   </div>
 
-  <div class="footer" style="opacity:1;">
-    <a href="https://litt.ly/booupplan" target="_blank" style="display:inline-block;padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:12px;font-weight:600;letter-spacing:0.3px;transition:all 0.3s;box-shadow:0 2px 12px rgba(108,92,231,0.3);" onmouseenter="this.style.transform='scale(1.03)';this.style.boxShadow='0 4px 20px rgba(108,92,231,0.5)'" onmouseleave="this.style.transform='scale(1)';this.style.boxShadow='0 2px 12px rgba(108,92,231,0.3)'">🔥 아직도 영상만 다운받고 계신가요? 월 300만원 버는 유튜브 비법 →</a>
+  <div class="footer" style="opacity:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+    <div style="animation:bounce 1s ease-in-out infinite;font-size:20px;line-height:1;">
+      <span style="color:#ff4757;filter:drop-shadow(0 0 4px rgba(255,71,87,0.5));">▼</span>
+      <span style="color:#ff4757;filter:drop-shadow(0 0 4px rgba(255,71,87,0.5));">▼</span>
+      <span style="color:#ff4757;filter:drop-shadow(0 0 4px rgba(255,71,87,0.5));">▼</span>
+    </div>
+    <a href="https://litt.ly/booupplan" target="_blank" style="display:inline-block;padding:10px 24px;border-radius:10px;background:linear-gradient(135deg,#ff4757,#ff6b81);color:#fff;text-decoration:none;font-size:13px;font-weight:700;letter-spacing:0.3px;transition:all 0.3s;box-shadow:0 2px 16px rgba(255,71,87,0.4);animation:pulse-btn 2s ease-in-out infinite;" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">🔥 아직도 영상만 다운받고 계신가요? 월 300 버는 유튜브 비법 →</a>
   </div>
+  <style>
+    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(5px)} }
+    @keyframes pulse-btn { 0%,100%{box-shadow:0 2px 16px rgba(255,71,87,0.4)} 50%{box-shadow:0 4px 24px rgba(255,71,87,0.7)} }
+  </style>
 
   <script>
     const COLORS = { YouTube:"#ff0000", Instagram:"#e1306c", TikTok:"#00f2ea", Threads:"#ffffff", Facebook:"#1877f2" };
