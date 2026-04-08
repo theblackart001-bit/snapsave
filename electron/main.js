@@ -1,119 +1,114 @@
-const { app, BrowserWindow, shell, dialog } = require("electron");
-const { spawn } = require("child_process");
+const { app, BrowserWindow, shell, dialog, ipcMain } = require("electron");
+const { execFile } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
-const net = require("net");
+const fs = require("fs");
+const os = require("os");
 
-// Fix GPU issues on some Windows machines
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 
 let mainWindow;
-let serverProcess;
-
 const isDev = !app.isPackaged;
 
 function getResourcePath(filename) {
-  if (isDev) {
-    return path.join(__dirname, "..", "bin", filename);
-  }
+  if (isDev) return path.join(__dirname, "..", "bin", filename);
   return path.join(process.resourcesPath, "bin", filename);
 }
 
-function findAvailablePort(startPort) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.listen(startPort, () => {
-      const port = server.address().port;
-      server.close(() => resolve(port));
-    });
-    server.on("error", () => resolve(findAvailablePort(startPort + 1)));
-  });
+function getYtdlpPath() {
+  return getResourcePath("yt-dlp.exe");
 }
 
-async function startNextServer(port) {
-  const appDir = isDev
-    ? path.join(__dirname, "..")
-    : path.join(process.resourcesPath, "app");
+function getFfmpegDir() {
+  return path.dirname(getResourcePath("ffmpeg.exe"));
+}
 
-  // .next build output is in extraResources/app-next when packaged
-  if (!isDev) {
-    const fs = require("fs");
-    const src = path.join(process.resourcesPath, "app-next");
-    const dest = path.join(appDir, ".next");
-    if (!fs.existsSync(dest) && fs.existsSync(src)) {
-      fs.symlinkSync(src, dest, "junction");
-    }
-  }
-
-  const nextBin = path.join(appDir, "node_modules", "next", "dist", "bin", "next");
-
-  const ytdlpPath = getResourcePath("yt-dlp.exe");
-  const ffmpegDir = path.dirname(getResourcePath("ffmpeg.exe"));
-
-  const command = isDev ? "dev" : "start";
-
-  const env = {
-    ...process.env,
-    PORT: String(port),
-    YTDLP_PATH: ytdlpPath,
-    FFMPEG_DIR: ffmpegDir,
-  };
-  if (!isDev) {
-    env.NODE_ENV = "production";
-  }
-
+function runYtdlp(args) {
   return new Promise((resolve, reject) => {
-    let resolved = false;
-    const done = () => {
-      if (!resolved) { resolved = true; resolve(port); }
-    };
-
-    serverProcess = spawn("node", [nextBin, command, "-p", String(port)], {
-      cwd: appDir,
-      env,
-      stdio: "pipe",
-      shell: true,
-    });
-
-    serverProcess.stdout.on("data", (data) => {
-      const msg = data.toString();
-      console.log("[next]", msg.trim());
-      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost") || msg.includes(":" + port)) {
-        done();
-      }
-    });
-
-    serverProcess.stderr.on("data", (data) => {
-      const msg = data.toString();
-      console.log("[next:err]", msg.trim());
-      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost") || msg.includes(":" + port)) {
-        done();
-      }
-    });
-
-    serverProcess.on("error", (err) => {
-      console.error("Failed to start server:", err);
-      reject(err);
-    });
-
-    // Poll until server responds
-    const http = require("http");
-    const poll = setInterval(() => {
-      const req = http.get(`http://localhost:${port}`, (res) => {
-        if (res.statusCode) {
-          clearInterval(poll);
-          done();
+    const ffmpegDir = getFfmpegDir();
+    const ffmpegArgs = ffmpegDir ? ["--ffmpeg-location", ffmpegDir] : [];
+    execFile(
+      getYtdlpPath(),
+      [...ffmpegArgs, ...args],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 120000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          const errorLines = (stderr || error.message)
+            .split("\n")
+            .filter((l) => !l.startsWith("WARNING:"))
+            .join("\n")
+            .trim();
+          reject(new Error(errorLines || "다운로드 중 오류가 발생했습니다"));
+        } else {
+          resolve(stdout);
         }
-      });
-      req.on("error", () => {});
-    }, 1000);
-
-    setTimeout(() => { clearInterval(poll); done(); }, 30000);
+      }
+    );
   });
 }
 
-async function createWindow(port) {
+function detectPlatform(url) {
+  if (/youtube\.com|youtu\.be/i.test(url)) return "YouTube";
+  if (/instagram\.com/i.test(url)) return "Instagram";
+  if (/tiktok\.com/i.test(url)) return "TikTok";
+  if (/threads\.net/i.test(url)) return "Threads";
+  if (/facebook\.com|fb\.watch/i.test(url)) return "Facebook";
+  return "Unknown";
+}
+
+// IPC: get video info
+ipcMain.handle("get-info", async (_event, url) => {
+  const raw = await runYtdlp(["-j", "--no-playlist", url]);
+  const data = JSON.parse(raw);
+  return {
+    id: data.id,
+    title: data.title || "Untitled",
+    thumbnail: data.thumbnail || "",
+    duration: data.duration || 0,
+    uploader: data.uploader || data.channel || "Unknown",
+    platform: detectPlatform(url),
+  };
+});
+
+// IPC: download media
+ipcMain.handle("download", async (_event, opts) => {
+  const downloadsDir = path.join(os.homedir(), "Downloads");
+  const outputTemplate = path.join(downloadsDir, "%(title).80s.%(ext)s");
+
+  if (opts.type === "thumbnail") {
+    await runYtdlp([
+      "--write-thumbnail",
+      "--skip-download",
+      "--convert-thumbnails", "jpg",
+      "-o", path.join(downloadsDir, "%(title).80s"),
+      "--no-playlist",
+      opts.url,
+    ]);
+    return { success: true };
+  }
+
+  if (opts.type === "audio") {
+    await runYtdlp([
+      "-x", "--audio-format", "mp3", "--audio-quality", "0",
+      "-o", outputTemplate, "--no-playlist", opts.url,
+    ]);
+  } else {
+    const args = [];
+    if (opts.quality) {
+      const height = opts.quality.replace("p", "");
+      args.push("-f", `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`);
+    } else {
+      args.push("-f", "bestvideo+bestaudio/best");
+    }
+    args.push("--merge-output-format", "mp4", "-o", outputTemplate, "--no-playlist", opts.url);
+    await runYtdlp(args);
+  }
+
+  return { success: true };
+});
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 700,
@@ -127,38 +122,27 @@ async function createWindow(port) {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
-  mainWindow.loadURL(`http://localhost:${port}`);
+  mainWindow.loadFile(path.join(__dirname, "index.html"));
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     mainWindow.focus();
   });
 
-  // Fallback: force show after 3 seconds
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  }, 3000);
-
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
+  mainWindow.on("closed", () => { mainWindow = null; });
 }
 
-// Auto-updater
 function setupAutoUpdater() {
   if (isDev) return;
-
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
@@ -166,48 +150,28 @@ function setupAutoUpdater() {
     dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "업데이트 발견",
-      message: `새 버전 ${info.version}을 다운로드 중입니다. 완료되면 알려드릴게요.`,
+      message: `새 버전 ${info.version}을 다운로드 중입니다.`,
     });
   });
 
   autoUpdater.on("update-downloaded", () => {
-    dialog
-      .showMessageBox(mainWindow, {
-        type: "info",
-        title: "업데이트 준비 완료",
-        message: "업데이트가 다운로드되었습니다. 지금 재시작하시겠습니까?",
-        buttons: ["지금 재시작", "나중에"],
-      })
-      .then((result) => {
-        if (result.response === 0) {
-          autoUpdater.quitAndInstall();
-        }
-      });
+    dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "업데이트 준비 완료",
+      message: "업데이트가 다운로드되었습니다. 지금 재시작하시겠습니까?",
+      buttons: ["지금 재시작", "나중에"],
+    }).then((result) => {
+      if (result.response === 0) autoUpdater.quitAndInstall();
+    });
   });
 
-  autoUpdater.on("error", () => {
-    // Silent fail - don't bother user
-  });
-
+  autoUpdater.on("error", () => {});
   autoUpdater.checkForUpdates();
 }
 
 app.whenReady().then(async () => {
-  const port = await findAvailablePort(3456);
-  await startNextServer(port);
-  await createWindow(port);
+  await createWindow();
   setupAutoUpdater();
 });
 
-app.on("window-all-closed", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-  }
-  app.quit();
-});
-
-app.on("before-quit", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-  }
-});
+app.on("window-all-closed", () => { app.quit(); });

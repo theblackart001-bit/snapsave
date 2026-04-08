@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapSave</title>
+  <style>
+    :root {
+      --bg-primary: #0c0c0f;
+      --bg-secondary: #16161a;
+      --bg-tertiary: #1e1e24;
+      --text-primary: #ffffffee;
+      --text-secondary: #a0a0b0;
+      --accent: #6c5ce7;
+      --accent-hover: #7c6cf7;
+      --accent-glow: rgba(108, 92, 231, 0.3);
+      --border: #2a2a35;
+      --danger: #ff6b6b;
+      --success: #51cf66;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 24px;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .fade-up { animation: fadeUp 0.5s ease-out forwards; }
+
+    .header { text-align: center; margin-bottom: 40px; }
+    .header h1 {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #6c5ce7, #a29bfe, #74b9ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p { color: var(--text-secondary); font-size: 18px; }
+    .platforms { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }
+    .platform-icon {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+
+    .input-wrap {
+      width: 100%; max-width: 640px;
+      display: flex; border-radius: 16px; overflow: hidden;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+    }
+    .input-wrap input {
+      flex: 1; padding: 16px 20px; font-size: 16px;
+      background: transparent; border: none; outline: none;
+      color: var(--text-primary);
+    }
+    .input-wrap input::placeholder { color: var(--text-secondary); }
+    .input-wrap button {
+      padding: 16px 24px; font-size: 16px; font-weight: 600;
+      color: white; background: var(--accent); border: none; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .input-wrap button:hover { background: var(--accent-hover); }
+    .input-wrap button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .message {
+      margin-top: 16px; padding: 12px 20px; border-radius: 12px;
+      font-size: 14px; width: 100%; max-width: 640px;
+    }
+    .message.error {
+      background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.2);
+      color: var(--danger);
+    }
+    .message.success {
+      background: rgba(81, 207, 102, 0.1); border: 1px solid rgba(81, 207, 102, 0.2);
+      color: var(--success);
+    }
+
+    .card {
+      margin-top: 32px; width: 100%; max-width: 640px;
+      border-radius: 16px; overflow: hidden;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+    }
+    .card-top { display: flex; }
+    .card-thumb {
+      width: 288px; flex-shrink: 0; position: relative;
+      background: var(--bg-tertiary);
+    }
+    .card-thumb img { width: 100%; height: 100%; object-fit: cover; min-height: 160px; }
+    .card-duration {
+      position: absolute; bottom: 8px; right: 8px;
+      padding: 2px 8px; border-radius: 4px; font-size: 12px;
+      font-family: monospace; font-weight: 500;
+      background: rgba(0,0,0,0.8); color: #fff;
+    }
+    .card-info { flex: 1; padding: 20px; }
+    .card-platform {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 12px; font-weight: 700; margin-bottom: 8px;
+    }
+    .card-title {
+      font-size: 18px; font-weight: 600; line-height: 1.4;
+      margin-bottom: 8px; color: var(--text-primary);
+    }
+    .card-uploader { font-size: 14px; color: var(--text-secondary); }
+
+    .card-controls {
+      padding: 20px; border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    }
+    .dl-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 16px 12px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--bg-tertiary); cursor: pointer; transition: all 0.2s;
+    }
+    .dl-btn:hover { border-color: var(--btn-color); background: color-mix(in srgb, var(--btn-color) 6%, transparent); }
+    .dl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .dl-btn svg { width: 20px; height: 20px; }
+    .dl-btn .label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+    .dl-btn .sublabel { font-size: 12px; color: var(--text-secondary); }
+
+    .spinner {
+      width: 20px; height: 20px; border: 2px solid currentColor;
+      border-top-color: transparent; border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    .skeleton {
+      display: flex; gap: 20px; padding: 24px;
+    }
+    .skeleton .thumb { width: 192px; height: 112px; border-radius: 12px; flex-shrink: 0; }
+    .skeleton .lines { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+    .skeleton .line { height: 20px; border-radius: 4px; }
+    .shimmer {
+      background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border) 50%, var(--bg-tertiary) 75%);
+      background-size: 200% 100%; animation: shimmer 1.5s infinite;
+    }
+
+    .footer {
+      margin-top: auto; padding-top: 64px; padding-bottom: 24px;
+      text-align: center; font-size: 12px; color: var(--text-secondary); opacity: 0.5;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div class="header fade-up">
+    <h1>SnapSave</h1>
+    <p>YouTube, Instagram, TikTok, Threads, Facebook</p>
+    <div class="platforms">
+      <span class="platform-icon" style="background:#ff000020;color:#ff0000;border:1px solid #ff000030" title="YouTube">▶</span>
+      <span class="platform-icon" style="background:#e1306c20;color:#e1306c;border:1px solid #e1306c30" title="Instagram">📷</span>
+      <span class="platform-icon" style="background:#00f2ea20;color:#00f2ea;border:1px solid #00f2ea30" title="TikTok">♪</span>
+      <span class="platform-icon" style="background:#ffffff20;color:#ffffff;border:1px solid #ffffff30" title="Threads">@</span>
+      <span class="platform-icon" style="background:#1877f220;color:#1877f2;border:1px solid #1877f230" title="Facebook">f</span>
+    </div>
+  </div>
+
+  <div class="input-wrap fade-up" style="animation-delay:0.1s">
+    <input id="urlInput" type="url" placeholder="영상 URL을 붙여넣으세요...">
+    <button id="analyzeBtn">분석</button>
+  </div>
+
+  <div id="errorMsg" class="message error hidden fade-up"></div>
+  <div id="successMsg" class="message success hidden fade-up"></div>
+
+  <div id="skeleton" class="card hidden">
+    <div class="skeleton">
+      <div class="thumb shimmer"></div>
+      <div class="lines">
+        <div class="line shimmer" style="width:75%"></div>
+        <div class="line shimmer" style="width:50%"></div>
+        <div class="line shimmer" style="width:33%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="videoCard" class="card hidden fade-up">
+    <div class="card-top">
+      <div class="card-thumb">
+        <img id="cardThumb" src="" alt="">
+        <span id="cardDuration" class="card-duration"></span>
+      </div>
+      <div class="card-info">
+        <span id="cardPlatform" class="card-platform"></span>
+        <h2 id="cardTitle" class="card-title"></h2>
+        <p id="cardUploader" class="card-uploader"></p>
+      </div>
+    </div>
+    <div class="card-controls">
+      <button class="dl-btn" id="dlVideo" style="--btn-color:#6c5ce7">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span class="label">영상 다운로드</span>
+        <span class="sublabel">MP4 1080p</span>
+      </button>
+      <button class="dl-btn" id="dlAudio" style="--btn-color:#51cf66">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#51cf66" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="label">음원 추출</span>
+        <span class="sublabel">MP3</span>
+      </button>
+      <button class="dl-btn" id="dlThumb" style="--btn-color:#74b9ff">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#74b9ff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span class="label">썸네일</span>
+        <span class="sublabel">JPG</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="footer">SnapSave — 개인 사용 목적으로만 이용하세요</div>
+
+  <script>
+    const PLATFORM_COLORS = {
+      YouTube: "#ff0000", Instagram: "#e1306c", TikTok: "#00f2ea",
+      Threads: "#ffffff", Facebook: "#1877f2",
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const urlInput = $("urlInput");
+    const analyzeBtn = $("analyzeBtn");
+    const errorMsg = $("errorMsg");
+    const successMsg = $("successMsg");
+    const skeleton = $("skeleton");
+    const videoCard = $("videoCard");
+
+    let currentUrl = "";
+
+    function formatDuration(sec) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      return `${m}:${String(s).padStart(2,"0")}`;
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove("hidden");
+      successMsg.classList.add("hidden");
+    }
+
+    function showSuccess(msg) {
+      successMsg.textContent = msg;
+      successMsg.classList.remove("hidden");
+      errorMsg.classList.add("hidden");
+      setTimeout(() => successMsg.classList.add("hidden"), 5000);
+    }
+
+    function clearMessages() {
+      errorMsg.classList.add("hidden");
+      successMsg.classList.add("hidden");
+    }
+
+    async function analyze() {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      currentUrl = url;
+
+      clearMessages();
+      videoCard.classList.add("hidden");
+      skeleton.classList.remove("hidden");
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = "분석 중...";
+
+      try {
+        const info = await window.api.getInfo(url);
+        skeleton.classList.add("hidden");
+
+        const color = PLATFORM_COLORS[info.platform] || "#6c5ce7";
+        $("cardThumb").src = info.thumbnail;
+        $("cardDuration").textContent = info.duration > 0 ? formatDuration(info.duration) : "";
+        $("cardDuration").style.display = info.duration > 0 ? "" : "none";
+        $("cardPlatform").textContent = info.platform;
+        $("cardPlatform").style.background = color + "20";
+        $("cardPlatform").style.color = color;
+        $("cardPlatform").style.border = `1px solid ${color}30`;
+        $("cardTitle").textContent = info.title;
+        $("cardUploader").textContent = info.uploader;
+
+        videoCard.classList.remove("hidden");
+      } catch (e) {
+        skeleton.classList.add("hidden");
+        showError(e.message || "영상 정보를 가져올 수 없습니다");
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "분석";
+      }
+    }
+
+    async function download(type) {
+      if (!currentUrl) return;
+      const btn = type === "video" ? $("dlVideo") : type === "audio" ? $("dlAudio") : $("dlThumb");
+      const origHTML = btn.innerHTML;
+
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner" style="color:var(--text-secondary)"></div><span class="label">다운로드 중...</span><span class="sublabel">잠시만 기다려주세요</span>`;
+      clearMessages();
+
+      try {
+        await window.api.download({
+          url: currentUrl,
+          type,
+          quality: type === "video" ? "1080p" : undefined,
+        });
+        showSuccess("다운로드 완료! 다운로드 폴더를 확인하세요.");
+      } catch (e) {
+        showError(e.message || "다운로드에 실패했습니다");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHTML;
+      }
+    }
+
+    analyzeBtn.addEventListener("click", analyze);
+    urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") analyze(); });
+
+    $("dlVideo").addEventListener("click", () => download("video"));
+    $("dlAudio").addEventListener("click", () => download("audio"));
+    $("dlThumb").addEventListener("click", () => download("thumbnail"));
+  </script>
+</body>
+</html>

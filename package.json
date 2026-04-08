@@ -1,61 +1,36 @@
 {
   "name": "snapsave",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "electron:dev": "electron .",
-    "dist": "npm run build && electron-builder --win"
+    "start": "electron .",
+    "dist": "electron-builder --win"
   },
   "dependencies": {
-    "electron-updater": "^6.8.3",
-    "ffmpeg-static": "^5.3.0",
-    "fluent-ffmpeg": "^2.1.3",
-    "next": "16.2.2",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/fluent-ffmpeg": "^2.1.28",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "electron": "^41.1.1",
-    "electron-builder": "^26.8.1",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.2",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.snapsave.app",
     "productName": "SnapSave",
     "directories": {
-      "output": "release"
+      "output": "dist-out"
     },
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [],
     "files": [
       "electron/**/*",
-      "node_modules/**/*",
-      "package.json",
-      "next.config.ts",
-      "public/**/*"
+      "package.json"
     ],
     "extraResources": [
       {
         "from": "bin",
         "to": "bin",
-        "filter": ["**/*"]
-      },
-      {
-        "from": ".next",
-        "to": "app-next",
-        "filter": ["**/*", "!cache/**/*"]
+        "filter": ["yt-dlp.exe", "ffmpeg.exe"]
       }
     ],
     "win": {
