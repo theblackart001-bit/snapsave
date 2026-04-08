@@ -133,7 +133,9 @@ const indexHTML = `<!DOCTYPE html>
     <p id="setupPct" style="color:var(--text-secondary);font-size:13px;"></p>
   </div>
 
-  <div class="footer"><a href="https://litt.ly/booupplan" target="_blank" style="color:var(--accent);text-decoration:none;opacity:0.7;">litt.ly/booupplan</a> · SnapSave</div>
+  <div class="footer" style="opacity:1;">
+    <a href="https://litt.ly/booupplan" target="_blank" style="display:inline-block;padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:12px;font-weight:600;letter-spacing:0.3px;transition:all 0.3s;box-shadow:0 2px 12px rgba(108,92,231,0.3);" onmouseenter="this.style.transform='scale(1.03)';this.style.boxShadow='0 4px 20px rgba(108,92,231,0.5)'" onmouseleave="this.style.transform='scale(1)';this.style.boxShadow='0 2px 12px rgba(108,92,231,0.3)'">🔥 아직도 영상만 다운받고 계신가요? 월 300만원 버는 유튜브 비법 →</a>
+  </div>
 
   <script>
     const COLORS = { YouTube:"#ff0000", Instagram:"#e1306c", TikTok:"#00f2ea", Threads:"#ffffff", Facebook:"#1877f2" };
