@@ -1,7 +1,7 @@
-const { app, BrowserWindow, shell } = require("electron");
-const { execFile, spawn } = require("child_process");
+const { app, BrowserWindow, shell, dialog } = require("electron");
+const { spawn } = require("child_process");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
-const fs = require("fs");
 const net = require("net");
 
 let mainWindow;
@@ -68,7 +68,6 @@ async function startNextServer(port) {
 
     serverProcess.on("error", reject);
 
-    // Fallback: resolve after 5 seconds even if no "Ready" message
     setTimeout(() => resolve(port), 5000);
   });
 }
@@ -91,7 +90,6 @@ async function createWindow(port) {
 
   mainWindow.loadURL(`http://localhost:${port}`);
 
-  // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
@@ -102,10 +100,48 @@ async function createWindow(port) {
   });
 }
 
+// Auto-updater
+function setupAutoUpdater() {
+  if (isDev) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "업데이트 발견",
+      message: `새 버전 ${info.version}을 다운로드 중입니다. 완료되면 알려드릴게요.`,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "업데이트 준비 완료",
+        message: "업데이트가 다운로드되었습니다. 지금 재시작하시겠습니까?",
+        buttons: ["지금 재시작", "나중에"],
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+  });
+
+  autoUpdater.on("error", () => {
+    // Silent fail - don't bother user
+  });
+
+  autoUpdater.checkForUpdates();
+}
+
 app.whenReady().then(async () => {
   const port = await findAvailablePort(3456);
   await startNextServer(port);
   await createWindow(port);
+  setupAutoUpdater();
 });
 
 app.on("window-all-closed", () => {
