@@ -45,6 +45,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const fetchInfo = useCallback(async () => {
     if (!url.trim()) return;
@@ -80,6 +81,8 @@ export default function Home() {
       if (!url.trim()) return;
 
       setDownloading(type);
+      setError("");
+      setSuccess("");
 
       try {
         const res = await fetch("/api/download", {
@@ -92,27 +95,15 @@ export default function Home() {
           }),
         });
 
+        const data = await res.json();
+
         if (!res.ok) {
-          const data = await res.json();
           setError(data.error || "다운로드에 실패했습니다");
           return;
         }
 
-        const blob = await res.blob();
-        const disposition = res.headers.get("Content-Disposition");
-        let filename = `download.${type === "audio" ? "mp3" : type === "thumbnail" ? "jpg" : "mp4"}`;
-        if (disposition) {
-          const match = disposition.match(/filename="?(.+?)"?$/);
-          if (match) filename = decodeURIComponent(match[1]);
-        }
-
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
+        setSuccess("다운로드 완료! 다운로드 폴더를 확인하세요.");
+        setTimeout(() => setSuccess(""), 5000);
       } catch {
         setError("다운로드 중 오류가 발생했습니다");
       } finally {
@@ -227,6 +218,20 @@ export default function Home() {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {/* Success */}
+      {success && (
+        <div
+          className="mt-4 px-5 py-3 rounded-xl text-sm max-w-2xl w-full animate-fade-up"
+          style={{
+            background: "rgba(81, 207, 102, 0.1)",
+            border: "1px solid rgba(81, 207, 102, 0.2)",
+            color: "#51cf66",
+          }}
+        >
+          {success}
         </div>
       )}
 

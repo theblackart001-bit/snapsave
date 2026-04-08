@@ -4,6 +4,10 @@ const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const net = require("net");
 
+// Fix GPU issues on some Windows machines
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("disable-gpu");
+
 let mainWindow;
 let serverProcess;
 
@@ -33,21 +37,29 @@ async function startNextServer(port) {
     : path.join(process.resourcesPath, "app");
 
   const nextBin = path.join(appDir, "node_modules", "next", "dist", "bin", "next");
-  const nodePath = isDev ? process.execPath : process.execPath;
 
   const ytdlpPath = getResourcePath("yt-dlp.exe");
   const ffmpegDir = path.dirname(getResourcePath("ffmpeg.exe"));
+
+  const command = isDev ? "dev" : "start";
 
   const env = {
     ...process.env,
     PORT: String(port),
     YTDLP_PATH: ytdlpPath,
     FFMPEG_DIR: ffmpegDir,
-    NODE_ENV: "production",
   };
+  if (!isDev) {
+    env.NODE_ENV = "production";
+  }
 
   return new Promise((resolve, reject) => {
-    serverProcess = spawn("node", [nextBin, "start", "-p", String(port)], {
+    let resolved = false;
+    const done = () => {
+      if (!resolved) { resolved = true; resolve(port); }
+    };
+
+    serverProcess = spawn("node", [nextBin, command, "-p", String(port)], {
       cwd: appDir,
       env,
       stdio: "pipe",
@@ -56,16 +68,17 @@ async function startNextServer(port) {
 
     serverProcess.stdout.on("data", (data) => {
       const msg = data.toString();
-      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost")) {
-        resolve(port);
+      console.log("[next]", msg.trim());
+      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost") || msg.includes(":" + port)) {
+        done();
       }
     });
 
     serverProcess.stderr.on("data", (data) => {
       const msg = data.toString();
-      // Next.js sometimes outputs ready message to stderr
-      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost")) {
-        resolve(port);
+      console.log("[next:err]", msg.trim());
+      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost") || msg.includes(":" + port)) {
+        done();
       }
     });
 
@@ -75,21 +88,18 @@ async function startNextServer(port) {
     });
 
     // Poll until server responds
-    const poll = setInterval(async () => {
-      try {
-        const http = require("http");
-        const req = http.get(`http://localhost:${port}`, (res) => {
-          if (res.statusCode) {
-            clearInterval(poll);
-            resolve(port);
-          }
-        });
-        req.on("error", () => {});
-        req.end();
-      } catch {}
-    }, 500);
+    const http = require("http");
+    const poll = setInterval(() => {
+      const req = http.get(`http://localhost:${port}`, (res) => {
+        if (res.statusCode) {
+          clearInterval(poll);
+          done();
+        }
+      });
+      req.on("error", () => {});
+    }, 1000);
 
-    setTimeout(() => { clearInterval(poll); resolve(port); }, 15000);
+    setTimeout(() => { clearInterval(poll); done(); }, 30000);
   });
 }
 
@@ -103,6 +113,7 @@ async function createWindow(port) {
     icon: path.join(__dirname, "icon.ico"),
     autoHideMenuBar: true,
     backgroundColor: "#0c0c0f",
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -110,6 +121,19 @@ async function createWindow(port) {
   });
 
   mainWindow.loadURL(`http://localhost:${port}`);
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // Fallback: force show after 3 seconds
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }, 3000);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);

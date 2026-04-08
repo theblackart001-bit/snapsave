@@ -1,16 +1,38 @@
 import { execFile } from "child_process";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
-const YTDLP_PATH = process.env.YTDLP_PATH || "yt-dlp";
+function getYtdlpPath(): string {
+  if (process.env.YTDLP_PATH && fs.existsSync(process.env.YTDLP_PATH)) {
+    return process.env.YTDLP_PATH;
+  }
+  // Check project bin directory
+  const binPath = path.join(process.cwd(), "bin", "yt-dlp.exe");
+  if (fs.existsSync(binPath)) return binPath;
+  return "yt-dlp";
+}
 
 function getFfmpegDir(): string {
+  if (process.env.FFMPEG_DIR && fs.existsSync(process.env.FFMPEG_DIR)) {
+    return process.env.FFMPEG_DIR;
+  }
+  // Check project bin directory
+  const binDir = path.join(process.cwd(), "bin");
+  if (fs.existsSync(path.join(binDir, "ffmpeg.exe"))) return binDir;
+  // Try ffmpeg-static package
   try {
     const ffmpegStatic = require("ffmpeg-static") as string;
-    return path.dirname(ffmpegStatic);
-  } catch {
-    return "/usr/bin";
-  }
+    if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
+      return path.dirname(ffmpegStatic);
+    }
+  } catch {}
+  if (process.platform !== "win32") return "/usr/bin";
+  return "";
+}
+
+function getDownloadsDir(): string {
+  return path.join(os.homedir(), "Downloads");
 }
 
 export interface VideoInfo {
@@ -45,13 +67,20 @@ function detectPlatform(url: string): string {
 function runYtdlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const ffmpegDir = getFfmpegDir();
+    const ffmpegArgs = ffmpegDir ? ["--ffmpeg-location", ffmpegDir] : [];
     execFile(
-      YTDLP_PATH,
-      ["--ffmpeg-location", ffmpegDir, ...args],
-      { maxBuffer: 10 * 1024 * 1024, timeout: 60000 },
+      getYtdlpPath(),
+      [...ffmpegArgs, ...args],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 120000 },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(stderr || error.message));
+          // Filter out WARNING lines, keep only actual errors
+          const errorLines = (stderr || error.message)
+            .split("\n")
+            .filter((l: string) => !l.startsWith("WARNING:"))
+            .join("\n")
+            .trim();
+          reject(new Error(errorLines || "다운로드 중 오류가 발생했습니다"));
         } else {
           resolve(stdout);
         }
@@ -123,42 +152,31 @@ export interface DownloadOptions {
 
 export async function downloadMedia(
   options: DownloadOptions
-): Promise<{ filePath: string; filename: string }> {
-  const tmpDir = path.join(process.cwd(), "tmp-downloads");
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-  }
-
-  const outputTemplate = path.join(tmpDir, "%(title).80s-%(id)s.%(ext)s");
+): Promise<{ filename: string }> {
+  const downloadsDir = getDownloadsDir();
+  const outputTemplate = path.join(downloadsDir, "%(title).80s.%(ext)s");
 
   if (options.type === "thumbnail") {
     const infoRaw = await runYtdlp(["-j", "--no-playlist", options.url]);
     const info = JSON.parse(infoRaw);
-    const thumbUrl = info.thumbnail;
-    if (!thumbUrl) throw new Error("No thumbnail available");
+    if (!info.thumbnail) throw new Error("No thumbnail available");
 
-    const thumbPath = path.join(tmpDir, `thumb-${info.id}.jpg`);
     await runYtdlp([
       "--write-thumbnail",
       "--skip-download",
       "--convert-thumbnails",
       "jpg",
       "-o",
-      path.join(tmpDir, `thumb-%(id)s`),
+      path.join(downloadsDir, "%(title).80s"),
       "--no-playlist",
       options.url,
     ]);
 
-    // Find the downloaded thumbnail
-    const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(`thumb-${info.id}`));
-    if (files.length === 0) throw new Error("Thumbnail download failed");
-
-    const filePath = path.join(tmpDir, files[0]);
-    return { filePath, filename: `${info.title || info.id}-thumbnail.jpg` };
+    return { filename: `${(info.title || info.id).slice(0, 80)}.jpg` };
   }
 
   if (options.type === "audio") {
-    const args = [
+    await runYtdlp([
       "-x",
       "--audio-format",
       "mp3",
@@ -168,8 +186,7 @@ export async function downloadMedia(
       outputTemplate,
       "--no-playlist",
       options.url,
-    ];
-    await runYtdlp(args);
+    ]);
   } else {
     const args: string[] = [];
     if (options.formatId) {
@@ -184,13 +201,5 @@ export async function downloadMedia(
     await runYtdlp(args);
   }
 
-  // Find the most recent file in tmp dir
-  const files = fs.readdirSync(tmpDir)
-    .map((f) => ({ name: f, time: fs.statSync(path.join(tmpDir, f)).mtimeMs }))
-    .sort((a, b) => b.time - a.time);
-
-  if (files.length === 0) throw new Error("Download failed");
-
-  const filePath = path.join(tmpDir, files[0].name);
-  return { filePath, filename: files[0].name };
+  return { filename: "다운로드 폴더에 저장됨" };
 }

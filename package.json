@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "electron:dev": "npm run build && electron .",
+    "electron:dev": "electron .",
     "dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
