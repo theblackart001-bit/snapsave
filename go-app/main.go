@@ -330,5 +330,12 @@ func main() {
 
 	w.SetSize(900, 700, webview2.HintNone)
 	w.Navigate(fmt.Sprintf("http://%s", addr))
+
+	// Set taskbar/window icon after a short delay for window to be created
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		setWindowIcon()
+	}()
+
 	w.Run()
 }
