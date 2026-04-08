@@ -104,24 +104,33 @@ func ensureTools() error {
 // ── yt-dlp runner ──
 
 func runYtdlp(args ...string) (string, error) {
-	allArgs := append([]string{"--ffmpeg-location", binDir}, args...)
+	allArgs := append([]string{"--ffmpeg-location", binDir, "--no-warnings"}, args...)
 	cmd := exec.Command(ytdlpExe, allArgs...)
 	cmd.SysProcAttr = hiddenWindowAttr()
-	out, err := cmd.Output()
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			lines := strings.Split(string(ee.Stderr), "\n")
-			var filtered []string
-			for _, l := range lines {
-				if !strings.HasPrefix(l, "WARNING:") {
-					filtered = append(filtered, l)
-				}
+		// Filter noise from stderr
+		errText := stderr.String()
+		var lines []string
+		for _, l := range strings.Split(errText, "\n") {
+			t := strings.TrimSpace(l)
+			if t == "" || strings.HasPrefix(t, "WARNING:") || strings.HasPrefix(t, "[download]") || strings.HasPrefix(t, "[info]") {
+				continue
 			}
-			return "", fmt.Errorf(strings.TrimSpace(strings.Join(filtered, "\n")))
+			lines = append(lines, t)
 		}
-		return "", err
+		msg := strings.Join(lines, "\n")
+		if msg == "" {
+			msg = "다운로드 중 오류가 발생했습니다"
+		}
+		return "", fmt.Errorf("%s", msg)
 	}
-	return string(out), nil
+	return stdout.String(), nil
 }
 
 func detectPlatform(url string) string {
