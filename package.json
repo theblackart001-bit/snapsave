@@ -38,9 +38,14 @@
     "directories": {
       "output": "release"
     },
+    "asar": false,
     "files": [
       "electron/**/*",
-      ".next/**/*",
+      {
+        "from": ".next",
+        "to": ".next",
+        "filter": ["**/*"]
+      },
       "node_modules/**/*",
       "package.json",
       "next.config.ts",

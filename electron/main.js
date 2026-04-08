@@ -28,13 +28,12 @@ function findAvailablePort(startPort) {
 }
 
 async function startNextServer(port) {
-  const nextPath = isDev
-    ? path.join(__dirname, "..", "node_modules", ".bin", "next.cmd")
-    : path.join(process.resourcesPath, "app", "node_modules", ".bin", "next.cmd");
-
   const appDir = isDev
     ? path.join(__dirname, "..")
     : path.join(process.resourcesPath, "app");
+
+  const nextBin = path.join(appDir, "node_modules", "next", "dist", "bin", "next");
+  const nodePath = isDev ? process.execPath : process.execPath;
 
   const ytdlpPath = getResourcePath("yt-dlp.exe");
   const ffmpegDir = path.dirname(getResourcePath("ffmpeg.exe"));
@@ -48,7 +47,7 @@ async function startNextServer(port) {
   };
 
   return new Promise((resolve, reject) => {
-    serverProcess = spawn(nextPath, ["start", "-p", String(port)], {
+    serverProcess = spawn("node", [nextBin, "start", "-p", String(port)], {
       cwd: appDir,
       env,
       stdio: "pipe",
@@ -57,18 +56,40 @@ async function startNextServer(port) {
 
     serverProcess.stdout.on("data", (data) => {
       const msg = data.toString();
-      if (msg.includes("Ready") || msg.includes("started")) {
+      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost")) {
         resolve(port);
       }
     });
 
     serverProcess.stderr.on("data", (data) => {
-      console.error("Server:", data.toString());
+      const msg = data.toString();
+      // Next.js sometimes outputs ready message to stderr
+      if (msg.includes("Ready") || msg.includes("started") || msg.includes("localhost")) {
+        resolve(port);
+      }
     });
 
-    serverProcess.on("error", reject);
+    serverProcess.on("error", (err) => {
+      console.error("Failed to start server:", err);
+      reject(err);
+    });
 
-    setTimeout(() => resolve(port), 5000);
+    // Poll until server responds
+    const poll = setInterval(async () => {
+      try {
+        const http = require("http");
+        const req = http.get(`http://localhost:${port}`, (res) => {
+          if (res.statusCode) {
+            clearInterval(poll);
+            resolve(port);
+          }
+        });
+        req.on("error", () => {});
+        req.end();
+      } catch {}
+    }, 500);
+
+    setTimeout(() => { clearInterval(poll); resolve(port); }, 15000);
   });
 }
 
