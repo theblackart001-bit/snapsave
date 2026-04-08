@@ -133,7 +133,7 @@ const indexHTML = `<!DOCTYPE html>
     <p id="setupPct" style="color:var(--text-secondary);font-size:13px;"></p>
   </div>
 
-  <div class="footer">SnapSave — 개인 사용 목적으로만 이용하세요</div>
+  <div class="footer"><a href="https://litt.ly/booupplan" target="_blank" style="color:var(--accent);text-decoration:none;opacity:0.7;">litt.ly/booupplan</a> · SnapSave</div>
 
   <script>
     const COLORS = { YouTube:"#ff0000", Instagram:"#e1306c", TikTok:"#00f2ea", Threads:"#ffffff", Facebook:"#1877f2" };
@@ -214,6 +214,12 @@ const indexHTML = `<!DOCTYPE html>
     $("dlVideo").addEventListener("click", ()=>dl("video"));
     $("dlAudio").addEventListener("click", ()=>dl("audio"));
     $("dlThumb").addEventListener("click", ()=>dl("thumbnail"));
+
+    // Open external links in system browser
+    document.addEventListener("click", e => {
+      const a = e.target.closest("a[href]");
+      if (a && a.href.startsWith("http")) { e.preventDefault(); window.open(a.href); }
+    });
   </script>
 </body>
 </html>`
