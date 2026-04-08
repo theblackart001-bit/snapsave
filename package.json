@@ -70,8 +70,8 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": true,
       "createDesktopShortcut": true,
       "shortcutName": "SnapSave"
     },
