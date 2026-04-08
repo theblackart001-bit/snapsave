@@ -41,24 +41,21 @@
     "asar": false,
     "files": [
       "electron/**/*",
-      {
-        "from": ".next",
-        "to": ".next",
-        "filter": ["**/*"]
-      },
       "node_modules/**/*",
       "package.json",
       "next.config.ts",
-      "public/**/*",
-      "src/**/*"
+      "public/**/*"
     ],
     "extraResources": [
       {
         "from": "bin",
         "to": "bin",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
+      },
+      {
+        "from": ".next",
+        "to": "app-next",
+        "filter": ["**/*", "!cache/**/*"]
       }
     ],
     "win": {

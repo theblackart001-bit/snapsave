@@ -36,6 +36,16 @@ async function startNextServer(port) {
     ? path.join(__dirname, "..")
     : path.join(process.resourcesPath, "app");
 
+  // .next build output is in extraResources/app-next when packaged
+  if (!isDev) {
+    const fs = require("fs");
+    const src = path.join(process.resourcesPath, "app-next");
+    const dest = path.join(appDir, ".next");
+    if (!fs.existsSync(dest) && fs.existsSync(src)) {
+      fs.symlinkSync(src, dest, "junction");
+    }
+  }
+
   const nextBin = path.join(appDir, "node_modules", "next", "dist", "bin", "next");
 
   const ytdlpPath = getResourcePath("yt-dlp.exe");
