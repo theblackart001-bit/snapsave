@@ -21,7 +21,7 @@ import (
 // Version is the running build version. Override at build time with:
 //
 //	go build -ldflags "-X main.Version=1.2.3"
-var Version = "1.2.0"
+var Version = "1.3.1"
 
 // updateRepo is the GitHub "owner/name" the updater queries. To redirect
 // updates to a different repo, override at build time:
