@@ -143,6 +143,11 @@ const indexHTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <!-- Version status pill — top of the page, always visible. Populated
+       from /api/update/status on load so the user can see at a glance
+       whether they're on the latest build or an upgrade is pending. -->
+  <div id="versionPill" style="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:50;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:rgba(81,207,102,0.12);border:1px solid rgba(81,207,102,0.3);color:#51cf66;letter-spacing:0.2px;">v… 확인 중</div>
+
   <div class="header fade-up">
     <h1>SnapSave</h1>
     <p>YouTube, Instagram, TikTok, Threads, Facebook, 샤오홍슈, 더우인</p>
@@ -201,9 +206,6 @@ const indexHTML = `<!DOCTYPE html>
     <div class="progress-wrap"><div id="setupBar" class="progress-bar"></div></div>
     <p id="setupPct" style="color:var(--text-secondary);font-size:13px;"></p>
   </div>
-
-  <!-- Tiny version pill — populated from /api/update/status on load. -->
-  <div id="versionPill" style="text-align:center;font-size:11px;color:var(--text-secondary);margin-top:6px;opacity:0.8;">v…</div>
 
   <div class="footer" style="opacity:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
     <div style="animation:bounce 1s ease-in-out infinite;font-size:20px;line-height:1;">
