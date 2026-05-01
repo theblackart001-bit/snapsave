@@ -202,6 +202,9 @@ const indexHTML = `<!DOCTYPE html>
     <p id="setupPct" style="color:var(--text-secondary);font-size:13px;"></p>
   </div>
 
+  <!-- Tiny version pill — populated from /api/update/status on load. -->
+  <div id="versionPill" style="text-align:center;font-size:11px;color:var(--text-secondary);margin-top:6px;opacity:0.8;">v…</div>
+
   <div class="footer" style="opacity:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
     <div style="animation:bounce 1s ease-in-out infinite;font-size:20px;line-height:1;">
       <span style="color:#ff4757;filter:drop-shadow(0 0 4px rgba(255,71,87,0.5));">▼</span>
@@ -366,7 +369,24 @@ const indexHTML = `<!DOCTYPE html>
     $("dlAudio").addEventListener("click", ()=>dl("audio"));
     $("dlThumb").addEventListener("click", ()=>dl("thumbnail"));
     // Auto-update is handled at startup (main.go gates the WebView on
-    // hasStartupUpdate). The main UI no longer needs an in-app update banner.
+    // hasStartupUpdate). The main UI just surfaces a small "최신" pill so
+    // the user knows the version they're on without having to dig.
+    (async () => {
+      try {
+        const res = await fetch("/api/update/status");
+        if (!res.ok) return;
+        const st = await res.json();
+        const pill = $("versionPill");
+        if (!pill) return;
+        if (st.available && st.latest) {
+          pill.textContent = "v" + (st.current||"?") + " · 새 버전 " + st.latest + " 사용 가능";
+          pill.style.color = "#a29bfe";
+        } else {
+          pill.textContent = "v" + (st.current||"?") + " · ✓ 최신 버전입니다";
+          pill.style.color = "#51cf66";
+        }
+      } catch(_) {}
+    })();
 
     // History panel
     const TYPE_COLORS = { "영상":"#6c5ce7", "음원":"#51cf66", "썸네일":"#74b9ff" };

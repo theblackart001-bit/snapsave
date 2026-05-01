@@ -251,47 +251,53 @@ func downloadFileWithProgress(url, dst string, onProgress func(pct float64)) err
 	return nil
 }
 
-// writeUpdateBatch writes a self-deleting .bat that:
+// writeUpdateScript writes a self-deleting PowerShell script that:
 //  1. Waits for the running .exe to release the lock
 //  2. Replaces the .exe with the freshly downloaded .new file
 //  3. Re-launches it
 //  4. Deletes itself
 //
-// We escape every path argument with %% so spaces (which the user's path has)
-// don't break parsing.
-func writeUpdateBatch(currentExe, newExe string) (string, error) {
-	batPath := filepath.Join(filepath.Dir(currentExe), "snapsave-update.bat")
-	script := `@echo off
-setlocal
-set "TARGET=` + currentExe + `"
-set "SOURCE=` + newExe + `"
+// PowerShell over .bat because cmd.exe trips over Korean (and other non-ASCII)
+// paths via codepage mismatch — PowerShell handles UTF-16 paths natively.
+// File is written as UTF-8 with BOM so PowerShell parses non-ASCII strings
+// correctly regardless of system locale.
+func writeUpdateScript(currentExe, newExe string) (string, error) {
+	scriptPath := filepath.Join(filepath.Dir(currentExe), "snapsave-update.ps1")
+	// PowerShell single-quoted strings allow embedded apostrophes only via doubling.
+	// Convert ' -> '' for safe embedding.
+	psQuote := func(s string) string {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	body := `$ErrorActionPreference = 'SilentlyContinue'
+$target = ` + psQuote(currentExe) + `
+$source = ` + psQuote(newExe) + `
 
-rem Wait until the old SnapSave process releases the file (max ~10s).
-set /a TRIES=0
-:waitloop
-del /f /q "%TARGET%" >nul 2>&1
-if not exist "%TARGET%" goto replace
-set /a TRIES+=1
-if %TRIES% GEQ 20 goto fail
-ping -n 2 127.0.0.1 >nul
-goto waitloop
+# Wait for the running .exe to release the file lock (max ~10s)
+for ($i = 0; $i -lt 20; $i++) {
+    Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $target)) { break }
+    Start-Sleep -Milliseconds 500
+}
 
-:replace
-move /y "%SOURCE%" "%TARGET%" >nul
-if errorlevel 1 goto fail
-start "" "%TARGET%"
-del /f /q "%~f0"
-exit /b 0
+if (Test-Path -LiteralPath $target) {
+    # Couldn't free the file. Leave the .new file in place so a manual
+    # rename can recover, then bail.
+    exit 1
+}
 
-:fail
-echo Update failed. The old SnapSave is locked.
-pause
-exit /b 1
+Move-Item -LiteralPath $source -Destination $target -Force
+if (-not $?) { exit 1 }
+
+Start-Process -FilePath $target
+Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
 `
-	if err := os.WriteFile(batPath, []byte(script), 0755); err != nil {
+	// UTF-8 BOM keeps PowerShell parsing in UTF-8 even when the system console
+	// codepage is something else (cp949 on Korean Windows).
+	utf8WithBOM := append([]byte{0xEF, 0xBB, 0xBF}, []byte(body)...)
+	if err := os.WriteFile(scriptPath, utf8WithBOM, 0755); err != nil {
 		return "", err
 	}
-	return batPath, nil
+	return scriptPath, nil
 }
 
 // applyUpdate downloads the asset and arranges a self-replace + restart.
@@ -322,18 +328,25 @@ func applyUpdate(downloadURL string, onProgress func(pct float64)) error {
 		return err
 	}
 
-	batPath, err := writeUpdateBatch(exePath, newPath)
+	scriptPath, err := writeUpdateScript(exePath, newPath)
 	if err != nil {
 		_ = os.Remove(newPath)
 		return err
 	}
 
-	// Detach the batch so it survives our exit.
-	cmd := exec.Command("cmd", "/c", "start", "", "/min", batPath)
+	// Detach PowerShell so it survives our exit. -ExecutionPolicy Bypass lets
+	// the script run regardless of the user's policy setting.
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoProfile", "-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-WindowStyle", "Hidden",
+		"-File", scriptPath,
+	)
 	cmd.SysProcAttr = hiddenWindowAttr()
 	if err := cmd.Start(); err != nil {
 		_ = os.Remove(newPath)
-		_ = os.Remove(batPath)
+		_ = os.Remove(scriptPath)
 		return err
 	}
 
