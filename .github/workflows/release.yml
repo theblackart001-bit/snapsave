@@ -1,0 +1,60 @@
+# Build the Go SnapSave binary on every tag push and publish a GitHub Release
+# in the *separate* public releases-only repo. Run manually via "workflow_dispatch"
+# to test, or push a `v*` tag from this private repo to ship.
+#
+# Required secrets (private repo settings → Secrets → Actions):
+#   RELEASES_REPO_TOKEN — Personal Access Token with `contents: write` on the
+#                         public theblackart001-bit/snapsave-releases repo.
+#                         (Fine-grained PAT scoped to that one repo is fine.)
+
+name: Release SnapSave
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. 1.4.0)"
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build SnapSave
+        working-directory: go-app
+        run: |
+          go build -ldflags="-H windowsgui -s -w -X main.Version=${{ steps.ver.outputs.version }}" -o ../SnapSave.exe .
+
+      - name: Publish release to releases-only repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            SnapSave.exe \
+            --repo theblackart001-bit/snapsave-releases \
+            --title "SnapSave ${{ steps.ver.outputs.tag }}" \
+            --generate-notes

@@ -64,13 +64,23 @@ function detectPlatform(url: string): string {
   return "Unknown";
 }
 
-function runYtdlp(args: string[]): Promise<string> {
+// Platforms that frequently need login cookies (private/age-gated/region-locked content)
+function needsCookies(url: string): boolean {
+  return /instagram\.com|threads\.net|facebook\.com|fb\.watch/i.test(url);
+}
+
+const COOKIE_BROWSERS = ["chrome", "edge", "firefox", "brave"] as const;
+
+function runYtdlp(args: string[], opts: { cookieBrowser?: string } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const ffmpegDir = getFfmpegDir();
     const ffmpegArgs = ffmpegDir ? ["--ffmpeg-location", ffmpegDir] : [];
+    const cookieArgs = opts.cookieBrowser
+      ? ["--cookies-from-browser", opts.cookieBrowser]
+      : [];
     execFile(
       getYtdlpPath(),
-      [...ffmpegArgs, ...args],
+      [...ffmpegArgs, ...cookieArgs, ...args],
       { maxBuffer: 10 * 1024 * 1024, timeout: 120000 },
       (error, stdout, stderr) => {
         if (error) {
@@ -89,8 +99,59 @@ function runYtdlp(args: string[]): Promise<string> {
   });
 }
 
+// Run yt-dlp with cookie fallback: try without cookies first, then each supported
+// browser if the error indicates a login/visibility issue. This way YouTube etc.
+// stay fast and Instagram/Threads automatically pick up the user's Chrome session.
+async function runYtdlpWithCookieFallback(
+  url: string,
+  args: string[]
+): Promise<string> {
+  // For platforms that often need login, try Chrome cookies first to avoid
+  // the obvious "login required" failure, then fall back to other browsers.
+  const browsers = needsCookies(url)
+    ? [...COOKIE_BROWSERS, undefined]
+    : [undefined, ...COOKIE_BROWSERS];
+
+  let lastError: Error | null = null;
+  for (const browser of browsers) {
+    try {
+      return await runYtdlp(args, { cookieBrowser: browser });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      const msg = err.message.toLowerCase();
+      lastError = err;
+
+      // Cookie extraction failed (browser locked, no profile) — try next browser
+      if (
+        msg.includes("could not copy") ||
+        msg.includes("could not find") ||
+        msg.includes("unable to read") ||
+        msg.includes("permission denied") ||
+        msg.includes("no such file")
+      ) {
+        continue;
+      }
+
+      // Login/visibility errors — try next browser (a different login may work)
+      if (
+        msg.includes("login required") ||
+        msg.includes("rate-limit") ||
+        msg.includes("not available to everyone") ||
+        msg.includes("can't be seen") ||
+        msg.includes("private")
+      ) {
+        continue;
+      }
+
+      // Any other error: stop and surface it
+      throw err;
+    }
+  }
+  throw lastError ?? new Error("다운로드 중 오류가 발생했습니다");
+}
+
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
-  const raw = await runYtdlp(["-j", "--no-playlist", url]);
+  const raw = await runYtdlpWithCookieFallback(url, ["-j", "--no-playlist", url]);
   const data = JSON.parse(raw);
 
   const formats: FormatInfo[] = (data.formats || [])
@@ -157,11 +218,15 @@ export async function downloadMedia(
   const outputTemplate = path.join(downloadsDir, "%(title).80s.%(ext)s");
 
   if (options.type === "thumbnail") {
-    const infoRaw = await runYtdlp(["-j", "--no-playlist", options.url]);
+    const infoRaw = await runYtdlpWithCookieFallback(options.url, [
+      "-j",
+      "--no-playlist",
+      options.url,
+    ]);
     const info = JSON.parse(infoRaw);
     if (!info.thumbnail) throw new Error("No thumbnail available");
 
-    await runYtdlp([
+    await runYtdlpWithCookieFallback(options.url, [
       "--write-thumbnail",
       "--skip-download",
       "--convert-thumbnails",
@@ -176,7 +241,7 @@ export async function downloadMedia(
   }
 
   if (options.type === "audio") {
-    await runYtdlp([
+    await runYtdlpWithCookieFallback(options.url, [
       "-x",
       "--audio-format",
       "mp3",
@@ -198,7 +263,7 @@ export async function downloadMedia(
       args.push("-f", "bestvideo+bestaudio/best");
     }
     args.push("--merge-output-format", "mp4", "-o", outputTemplate, "--no-playlist", options.url);
-    await runYtdlp(args);
+    await runYtdlpWithCookieFallback(options.url, args);
   }
 
   return { filename: "다운로드 폴더에 저장됨" };

@@ -322,7 +322,17 @@
         skeleton.classList.add("hidden");
 
         const color = PLATFORM_COLORS[info.platform] || "#6c5ce7";
-        $("cardThumb").src = info.thumbnail;
+        // Hotlink-blocked CDNs (Instagram, TikTok, FB) need a server-side proxy →
+        // ask main to fetch and return a data URI. YouTube falls through unchanged.
+        const thumbEl = $("cardThumb");
+        thumbEl.src = "";
+        if (info.thumbnail) {
+          window.api.getThumbnail(info.thumbnail).then(({ dataUrl }) => {
+            thumbEl.src = dataUrl || info.thumbnail;
+          }).catch(() => {
+            thumbEl.src = info.thumbnail;
+          });
+        }
         $("cardDuration").textContent = info.duration > 0 ? formatDuration(info.duration) : "";
         $("cardDuration").style.display = info.duration > 0 ? "" : "none";
         $("cardPlatform").textContent = info.platform;

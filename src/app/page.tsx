@@ -38,6 +38,32 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// CDNs that block hotlinking from the browser — must be loaded via /api/thumbnail proxy.
+const PROXIED_THUMBNAIL_HOSTS = [
+  "cdninstagram.com",
+  "fbcdn.net",
+  "tiktokcdn.com",
+  "tiktokcdn-us.com",
+  "muscdn.com",
+  "ttwstatic.com",
+  "xhscdn.com",
+  "douyinpic.com",
+  "douyinstatic.com",
+];
+
+function resolveThumbnailSrc(raw: string): string {
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    const needsProxy = PROXIED_THUMBNAIL_HOSTS.some(
+      (h) => u.hostname === h || u.hostname.endsWith(`.${h}`)
+    );
+    return needsProxy ? `/api/thumbnail?url=${encodeURIComponent(raw)}` : raw;
+  } catch {
+    return raw;
+  }
+}
+
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -270,7 +296,7 @@ export default function Home() {
               <div className="relative w-72 flex-shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={videoInfo.thumbnail}
+                  src={resolveThumbnailSrc(videoInfo.thumbnail)}
                   alt={videoInfo.title}
                   className="w-full h-full object-cover"
                   style={{ minHeight: 160 }}

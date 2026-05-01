@@ -44,3 +44,9 @@ next-env.d.ts
 /bin
 /release
 /tmp-downloads
+/dist-out
+
+# go-app build artifacts
+/go-app/SnapSave.exe
+/go-app/SnapSave.exe.backup*
+/go-app/bin/
